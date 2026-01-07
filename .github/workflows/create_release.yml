@@ -17,7 +17,7 @@ env:
   PYTHON_VERSION: '3.13'
   APOLLO_IPA_URL: ${{ inputs.apollo_ipa_url || 'https://files.catbox.moe/o2lue0.ipa' }}
   CATBOX_UPLOAD: ${{ inputs.catbox_upload }}
-  PYZULE_RW_URL: "https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip"
+  PYZULE_RW_URL: 'https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip'
 
 jobs:
   build-apollo-ipa:
@@ -47,7 +47,7 @@ jobs:
         run: brew install ldid
 
       # ------------------------------------------------------------------
-      # 🔥 RACE-PROOF: bepaal nieuwste ImprovedCustomApi release via tags
+      # 🔥 Bepaal nieuwste ImprovedCustomApi release + changelog
       # ------------------------------------------------------------------
       - name: Determine latest ImprovedCustomApi release
         id: get-release
@@ -70,8 +70,19 @@ jobs:
           echo "Using ImprovedCustomApi tag: $LATEST_TAG"
           echo "DEB_URL: $DEB_URL"
 
+          # 🔹 Upstream changelog ophalen (simpel & robuust)
+          UPSTREAM_NOTES=$(curl -sL \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/JeffreyCA/Apollo-ImprovedCustomApi/releases/tags/${LATEST_TAG} \
+            | sed -n 's/.*"body":[[:space:]]*"\(.*\)",/\1/p' \
+            | sed 's/\\n/\n/g; s/\\"/"/g')
+
           echo "RELEASE_TAG=$LATEST_TAG" >> "$GITHUB_OUTPUT"
           echo "DEB_URL=$DEB_URL" >> "$GITHUB_OUTPUT"
+
+          echo "UPSTREAM_NOTES<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$UPSTREAM_NOTES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Download apollo .ipa and improvedcustomapi .deb
         id: download-files
@@ -140,15 +151,29 @@ jobs:
 
           zip -6 -rq "NO-EXTENSIONS_GLASS_${OUTPUT_NAME}.ipa" Payload -x "*/.*"
 
+      # ------------------------------------------------------------------
+      # 📝 Release notes met upstream changelog
+      # ------------------------------------------------------------------
       - name: Generate release notes
         env:
           APOLLO_VERSION: ${{ steps.download-files.outputs.APOLLO_VERSION }}
           ICA_VERSION: ${{ steps.download-files.outputs.ICA_VERSION }}
+          UPSTREAM_NOTES: ${{ steps.get-release.outputs.UPSTREAM_NOTES }}
         run: |
           {
-            echo "Apollo version: \`v${APOLLO_VERSION}\`"
-            echo "ImprovedCustomApi version: \`v${ICA_VERSION}\`"
+            echo "## Apollo build"
+            echo "- Apollo version: \`v${APOLLO_VERSION}\`"
+            echo "- ImprovedCustomApi version: \`v${ICA_VERSION}\`"
             echo ""
+
+            echo "## ImprovedCustomApi changelog"
+            if [ -n "$UPSTREAM_NOTES" ]; then
+              echo "$UPSTREAM_NOTES"
+            else
+              echo "_No upstream release notes found._"
+            fi
+            echo ""
+
             echo "## Known Issues"
             echo "- Apollo Ultra features may cause app crashes"
             echo "- Imgur multi-image upload"
@@ -160,6 +185,7 @@ jobs:
           tag_name: v${{ steps.download-files.outputs.APOLLO_VERSION }}_${{ steps.download-files.outputs.ICA_VERSION }}
           name: Apollo v${{ steps.download-files.outputs.APOLLO_VERSION }} with ImprovedCustomApi v${{ steps.download-files.outputs.ICA_VERSION }}
           body_path: RELEASE_NOTES.md
+          overwrite_files: true
           files: |
             ${{ steps.download-files.outputs.OUTPUT_NAME }}/${{ steps.download-files.outputs.OUTPUT_NAME }}.ipa
             ${{ steps.download-files.outputs.OUTPUT_NAME }}/GLASS_${{ steps.download-files.outputs.OUTPUT_NAME }}.ipa
