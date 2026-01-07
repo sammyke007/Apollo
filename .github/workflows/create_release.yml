@@ -68,18 +68,23 @@ jobs:
       - name: Fetch ImprovedCustomApi changelog
         id: upstream
         run: |
-          python -c "
-import requests, os
-tag = os.environ['RELEASE_TAG']
-url = f'https://api.github.com/repos/JeffreyCA/Apollo-ImprovedCustomApi/releases/tags/{tag}'
-r = requests.get(url, timeout=10)
-r.raise_for_status()
-print(r.json().get('body','').strip())
-" > upstream_notes.txt
-
-          echo 'UPSTREAM_NOTES<<EOF' >> "$GITHUB_OUTPUT"
+          cat > fetch_changelog.py <<'PYEOF'
+      import requests, os
+      
+      tag = os.environ["RELEASE_TAG"]
+      url = f"https://api.github.com/repos/JeffreyCA/Apollo-ImprovedCustomApi/releases/tags/{tag}"
+      
+      r = requests.get(url, timeout=10)
+      r.raise_for_status()
+      
+      print(r.json().get("body", "").strip())
+      PYEOF
+      
+          python fetch_changelog.py > upstream_notes.txt
+      
+          echo "UPSTREAM_NOTES<<EOF" >> "$GITHUB_OUTPUT"
           cat upstream_notes.txt >> "$GITHUB_OUTPUT"
-          echo 'EOF' >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
         env:
           RELEASE_TAG: ${{ steps.get-release.outputs.RELEASE_TAG }}
 
