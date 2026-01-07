@@ -50,26 +50,29 @@ jobs:
       # ------------------------------------------------------------
       # 🔥 Bepaal laatste ImprovedCustomApi release + changelog
       # ------------------------------------------------------------
-      - name: Determine latest ImprovedCustomApi release
-        id: get-release
+      - name: Fetch ImprovedCustomApi changelog
+        id: upstream_notes
         run: |
-          LATEST_TAG=$(git ls-remote --tags https://github.com/JeffreyCA/Apollo-ImprovedCustomApi.git \
-            | awk -F/ '{print $3}' \
-            | grep '^v' \
-            | sort -V \
-            | tail -n 1)
+          UPSTREAM_NOTES=$(python <<'EOF'
+      import requests
+      import os
+      
+      tag = os.environ["LATEST_TAG"]
+      url = f"https://api.github.com/repos/JeffreyCA/Apollo-ImprovedCustomApi/releases/tags/{tag}"
+      
+      r = requests.get(url, timeout=10)
+      r.raise_for_status()
+      
+      print(r.json().get("body", "").strip())
+      EOF
+          )
+      
+          echo "UPSTREAM_NOTES<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$UPSTREAM_NOTES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+        env:
+          LATEST_TAG: ${{ steps.get-release.outputs.RELEASE_TAG }}
 
-          if [ -z "$LATEST_TAG" ]; then
-            echo "Error: Could not determine latest tag"
-            exit 1
-          fi
-
-          VERSION="${LATEST_TAG#v}"
-          DEB_NAME="ca.jeffrey.apollo-improvedcustomapi_${VERSION}_iphoneos-arm64_rootless.deb"
-          DEB_URL="https://github.com/JeffreyCA/Apollo-ImprovedCustomApi/releases/download/${LATEST_TAG}/${DEB_NAME}"
-
-          # ✅ Correct JSON parsing via Python
-          UPSTREAM_NOTES=$(python - <<EOF
 import requests
 url = "https://api.github.com/repos/JeffreyCA/Apollo-ImprovedCustomApi/releases/tags/${LATEST_TAG}"
 r = requests.get(url, timeout=10)
