@@ -1,4 +1,5 @@
 name: build release
+run-name: Apollo ${{ github.event_name }} • build & release
 
 on:
   workflow_call:
