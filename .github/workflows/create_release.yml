@@ -17,7 +17,7 @@ env:
   PYTHON_VERSION: '3.13'
   APOLLO_IPA_URL: ${{ inputs.apollo_ipa_url || 'https://files.catbox.moe/o2lue0.ipa' }}
   CATBOX_UPLOAD: ${{ inputs.catbox_upload }}
-  PYZULE_RW_URL: 'https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip'
+  PYZULE_RW_URL: "https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip"
 
 jobs:
   build-apollo-ipa:
@@ -46,9 +46,9 @@ jobs:
       - name: Install ldid
         run: brew install ldid
 
-      # ------------------------------------------------------------------
-      # 🔥 Bepaal nieuwste ImprovedCustomApi release + changelog
-      # ------------------------------------------------------------------
+      # ------------------------------------------------------------
+      # 🔥 Bepaal laatste ImprovedCustomApi release + changelog
+      # ------------------------------------------------------------
       - name: Determine latest ImprovedCustomApi release
         id: get-release
         run: |
@@ -67,15 +67,15 @@ jobs:
           DEB_NAME="ca.jeffrey.apollo-improvedcustomapi_${VERSION}_iphoneos-arm64_rootless.deb"
           DEB_URL="https://github.com/JeffreyCA/Apollo-ImprovedCustomApi/releases/download/${LATEST_TAG}/${DEB_NAME}"
 
-          echo "Using ImprovedCustomApi tag: $LATEST_TAG"
-          echo "DEB_URL: $DEB_URL"
-
-          # 🔹 Upstream changelog ophalen (simpel & robuust)
-          UPSTREAM_NOTES=$(curl -sL \
-            -H "Accept: application/vnd.github+json" \
-            https://api.github.com/repos/JeffreyCA/Apollo-ImprovedCustomApi/releases/tags/${LATEST_TAG} \
-            | sed -n 's/.*"body":[[:space:]]*"\(.*\)",/\1/p' \
-            | sed 's/\\n/\n/g; s/\\"/"/g')
+          # ✅ Correct JSON parsing via Python
+          UPSTREAM_NOTES=$(python - <<EOF
+import requests
+url = "https://api.github.com/repos/JeffreyCA/Apollo-ImprovedCustomApi/releases/tags/${LATEST_TAG}"
+r = requests.get(url, timeout=10)
+r.raise_for_status()
+print(r.json().get("body", "").strip())
+EOF
+          )
 
           echo "RELEASE_TAG=$LATEST_TAG" >> "$GITHUB_OUTPUT"
           echo "DEB_URL=$DEB_URL" >> "$GITHUB_OUTPUT"
@@ -151,9 +151,6 @@ jobs:
 
           zip -6 -rq "NO-EXTENSIONS_GLASS_${OUTPUT_NAME}.ipa" Payload -x "*/.*"
 
-      # ------------------------------------------------------------------
-      # 📝 Release notes met upstream changelog
-      # ------------------------------------------------------------------
       - name: Generate release notes
         env:
           APOLLO_VERSION: ${{ steps.download-files.outputs.APOLLO_VERSION }}
@@ -185,7 +182,6 @@ jobs:
           tag_name: v${{ steps.download-files.outputs.APOLLO_VERSION }}_${{ steps.download-files.outputs.ICA_VERSION }}
           name: Apollo v${{ steps.download-files.outputs.APOLLO_VERSION }} with ImprovedCustomApi v${{ steps.download-files.outputs.ICA_VERSION }}
           body_path: RELEASE_NOTES.md
-          overwrite_files: true
           files: |
             ${{ steps.download-files.outputs.OUTPUT_NAME }}/${{ steps.download-files.outputs.OUTPUT_NAME }}.ipa
             ${{ steps.download-files.outputs.OUTPUT_NAME }}/GLASS_${{ steps.download-files.outputs.OUTPUT_NAME }}.ipa
