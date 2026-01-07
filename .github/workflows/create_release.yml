@@ -72,32 +72,55 @@ jobs:
           echo "DEB_URL=$DEB_URL" >> "$GITHUB_OUTPUT"
 
       # ------------------------------------------------------------
-      # Fetch upstream changelog (authenticated)
+      # Fetch upstream changelog (FIX links to upstream repo)
       # ------------------------------------------------------------
       - name: Fetch ImprovedCustomApi changelog
         id: upstream
         run: |
           cat > fetch_changelog.py <<'PYEOF'
-          import requests, os
-
+          import os
+          import re
+          import requests
+      
           tag = os.environ["RELEASE_TAG"]
           token = os.environ["GITHUB_TOKEN"]
-
-          url = f"https://api.github.com/repos/JeffreyCA/Apollo-ImprovedCustomApi/releases/tags/{tag}"
-
+      
+          repo = "JeffreyCA/Apollo-ImprovedCustomApi"
+          base_url = f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
+      
           headers = {
               "Authorization": f"Bearer {token}",
               "Accept": "application/vnd.github+json",
           }
-
-          r = requests.get(url, headers=headers, timeout=10)
+      
+          r = requests.get(base_url, headers=headers, timeout=10)
           r.raise_for_status()
-
-          print(r.json().get("body", "").strip())
+      
+          body = r.json().get("body", "").strip()
+      
+          # --------------------------------------------------------
+          # Rewrite GitHub shorthand references to absolute links
+          # --------------------------------------------------------
+      
+          # PR #123 → PR [#123](.../pull/123)
+          body = re.sub(
+              r"\bPR\s+#(\d+)\b",
+              rf"PR [#\1](https://github.com/{repo}/pull/\1)",
+              body,
+          )
+      
+          # issue #123 or (#123) → [#123](.../issues/123)
+          body = re.sub(
+              r"#(\d+)\b",
+              rf"[#\1](https://github.com/{repo}/issues/\1)",
+              body,
+          )
+      
+          print(body)
           PYEOF
-
+      
           python fetch_changelog.py > upstream_notes.txt
-
+      
           echo "UPSTREAM_NOTES<<EOF" >> "$GITHUB_OUTPUT"
           cat upstream_notes.txt >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
