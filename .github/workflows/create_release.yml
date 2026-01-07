@@ -72,7 +72,7 @@ jobs:
           echo "DEB_URL=$DEB_URL" >> "$GITHUB_OUTPUT"
 
       # ------------------------------------------------------------
-      # Fetch upstream changelog (AUTHENTICATED, NO RATE LIMIT)
+      # Fetch upstream changelog (authenticated)
       # ------------------------------------------------------------
       - name: Fetch ImprovedCustomApi changelog
         id: upstream
@@ -128,7 +128,7 @@ jobs:
           echo "OUTPUT_NAME=Apollo-${APOLLO_VERSION}_ImprovedCustomApi-${ICA_VERSION}" >> "$GITHUB_OUTPUT"
 
       # ------------------------------------------------------------
-      # Build IPA
+      # Build IPA (cyan)
       # ------------------------------------------------------------
       - name: Build modified IPA
         run: |
@@ -139,6 +139,45 @@ jobs:
                -o Payload/Apollo.app \
                -f ../improvedcustomapi.deb \
                --fakesign
+
+      # ------------------------------------------------------------
+      # 🔧 FIX: remove duplicate LC_RPATH (DYLD crash fix)
+      # ------------------------------------------------------------
+      - name: Fix duplicate LC_RPATH in Apollo binary
+        run: |
+          BIN="build/Payload/Apollo.app/Apollo"
+
+          echo "Current rpaths:"
+          otool -l "$BIN" | awk '
+            $1=="cmd" && $2=="LC_RPATH"{inr=1}
+            inr && $1=="path"{print $2; inr=0}
+          '
+
+          count=$(otool -l "$BIN" | awk '
+            $1=="cmd" && $2=="LC_RPATH"{inr=1}
+            inr && $1=="path"{print $2; inr=0}
+          ' | grep -c '^@executable_path/Frameworks$' || true)
+
+          while [ "$count" -gt 1 ]; do
+            install_name_tool -delete_rpath "@executable_path/Frameworks" "$BIN"
+            count=$(otool -l "$BIN" | awk '
+              $1=="cmd" && $2=="LC_RPATH"{inr=1}
+              inr && $1=="path"{print $2; inr=0}
+            ' | grep -c '^@executable_path/Frameworks$' || true)
+          done
+
+          echo "Final rpaths:"
+          otool -l "$BIN" | awk '
+            $1=="cmd" && $2=="LC_RPATH"{inr=1}
+            inr && $1=="path"{print $2; inr=0}
+          '
+
+      # ------------------------------------------------------------
+      # vtool + signing + zip
+      # ------------------------------------------------------------
+      - name: Finalize IPA
+        run: |
+          cd build
 
           zip -6 -rq "${{ steps.download.outputs.OUTPUT_NAME }}.ipa" Payload -x "*/.*"
 
@@ -160,11 +199,7 @@ jobs:
             echo "- ImprovedCustomApi version: \`v${{ steps.download.outputs.ICA_VERSION }}\`"
             echo ""
             echo "## ImprovedCustomApi changelog"
-            if [ -n "${{ steps.upstream.outputs.UPSTREAM_NOTES }}" ]; then
-              echo "${{ steps.upstream.outputs.UPSTREAM_NOTES }}"
-            else
-              echo "_No upstream release notes found._"
-            fi
+            echo "${{ steps.upstream.outputs.UPSTREAM_NOTES }}"
             echo ""
             echo "## Known Issues"
             echo "- Apollo Ultra features may cause app crashes"
