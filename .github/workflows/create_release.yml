@@ -19,11 +19,17 @@ jobs:
     runs-on: macos-latest
 
     steps:
+      # ------------------------------------------------------------
+      # Checkout
+      # ------------------------------------------------------------
       - name: Check out repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      # ------------------------------------------------------------
+      # Python
+      # ------------------------------------------------------------
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
@@ -35,11 +41,14 @@ jobs:
           pip install requests
           pip install --force-reinstall "${{ env.PYZULE_RW_URL }}"
 
+      # ------------------------------------------------------------
+      # ldid
+      # ------------------------------------------------------------
       - name: Install ldid
         run: brew install ldid
 
       # ------------------------------------------------------------
-      # Bepaal nieuwste ImprovedCustomApi release
+      # Determine latest ImprovedCustomApi release
       # ------------------------------------------------------------
       - name: Determine latest ImprovedCustomApi release
         id: get-release
@@ -63,30 +72,38 @@ jobs:
           echo "DEB_URL=$DEB_URL" >> "$GITHUB_OUTPUT"
 
       # ------------------------------------------------------------
-      # 🔹 Upstream changelog ophalen (curl + python, ZONDER heredoc)
+      # Fetch upstream changelog (AUTHENTICATED, NO RATE LIMIT)
       # ------------------------------------------------------------
       - name: Fetch ImprovedCustomApi changelog
         id: upstream
         run: |
           cat > fetch_changelog.py <<'PYEOF'
           import requests, os
-      
+
           tag = os.environ["RELEASE_TAG"]
+          token = os.environ["GITHUB_TOKEN"]
+
           url = f"https://api.github.com/repos/JeffreyCA/Apollo-ImprovedCustomApi/releases/tags/{tag}"
-      
-          r = requests.get(url, timeout=10)
+
+          headers = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json",
+          }
+
+          r = requests.get(url, headers=headers, timeout=10)
           r.raise_for_status()
-      
+
           print(r.json().get("body", "").strip())
           PYEOF
-      
+
           python fetch_changelog.py > upstream_notes.txt
-      
+
           echo "UPSTREAM_NOTES<<EOF" >> "$GITHUB_OUTPUT"
           cat upstream_notes.txt >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
         env:
           RELEASE_TAG: ${{ steps.get-release.outputs.RELEASE_TAG }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # ------------------------------------------------------------
       # Download IPA + DEB
@@ -143,10 +160,14 @@ jobs:
             echo "- ImprovedCustomApi version: \`v${{ steps.download.outputs.ICA_VERSION }}\`"
             echo ""
             echo "## ImprovedCustomApi changelog"
-            echo "${{ steps.upstream.outputs.UPSTREAM_NOTES }}"
+            if [ -n "${{ steps.upstream.outputs.UPSTREAM_NOTES }}" ]; then
+              echo "${{ steps.upstream.outputs.UPSTREAM_NOTES }}"
+            else
+              echo "_No upstream release notes found._"
+            fi
             echo ""
             echo "## Known Issues"
-            echo "- Apollo Ultra features may cause crashes"
+            echo "- Apollo Ultra features may cause app crashes"
             echo "- Imgur multi-image upload"
           } > RELEASE_NOTES.md
 
