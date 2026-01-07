@@ -1,31 +1,22 @@
 name: build release
-run-name: Apollo ${{ github.event_name }} • build & release
+run-name: Apollo build & release
 
 on:
-  workflow_call:
   workflow_dispatch:
     inputs:
       apollo_ipa_url:
         description: 'Apollo .ipa URL'
         required: false
         default: 'https://files.catbox.moe/o2lue0.ipa'
-      catbox_upload:
-        description: 'Upload to Catbox.moe'
-        type: boolean
-        default: false
 
 env:
   PYTHON_VERSION: '3.13'
   APOLLO_IPA_URL: ${{ inputs.apollo_ipa_url || 'https://files.catbox.moe/o2lue0.ipa' }}
-  CATBOX_UPLOAD: ${{ inputs.catbox_upload }}
-  PYZULE_RW_URL: "https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip"
+  PYZULE_RW_URL: 'https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip'
 
 jobs:
   build-apollo-ipa:
     runs-on: macos-latest
-    defaults:
-      run:
-        shell: bash
 
     steps:
       - name: Check out repository
@@ -33,12 +24,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup python
+      - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install python dependencies
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install requests
@@ -48,53 +39,58 @@ jobs:
         run: brew install ldid
 
       # ------------------------------------------------------------
-      # 🔥 Bepaal laatste ImprovedCustomApi release + changelog
+      # Bepaal nieuwste ImprovedCustomApi release
       # ------------------------------------------------------------
-      - name: Fetch ImprovedCustomApi changelog
-        id: upstream_notes
+      - name: Determine latest ImprovedCustomApi release
+        id: get-release
         run: |
-          UPSTREAM_NOTES=$(python <<'EOF'
-      import requests
-      import os
-      
-      tag = os.environ["LATEST_TAG"]
-      url = f"https://api.github.com/repos/JeffreyCA/Apollo-ImprovedCustomApi/releases/tags/{tag}"
-      
-      r = requests.get(url, timeout=10)
-      r.raise_for_status()
-      
-      print(r.json().get("body", "").strip())
-      EOF
-          )
-      
-          echo "UPSTREAM_NOTES<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$UPSTREAM_NOTES" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-        env:
-          LATEST_TAG: ${{ steps.get-release.outputs.RELEASE_TAG }}
+          LATEST_TAG=$(git ls-remote --tags https://github.com/JeffreyCA/Apollo-ImprovedCustomApi.git \
+            | awk -F/ '{print $3}' \
+            | grep '^v' \
+            | sort -V \
+            | tail -n 1)
 
-import requests
-url = "https://api.github.com/repos/JeffreyCA/Apollo-ImprovedCustomApi/releases/tags/${LATEST_TAG}"
-r = requests.get(url, timeout=10)
-r.raise_for_status()
-print(r.json().get("body", "").strip())
-EOF
-          )
+          if [ -z "$LATEST_TAG" ]; then
+            echo "❌ Could not determine latest tag"
+            exit 1
+          fi
+
+          VERSION="${LATEST_TAG#v}"
+          DEB_NAME="ca.jeffrey.apollo-improvedcustomapi_${VERSION}_iphoneos-arm64_rootless.deb"
+          DEB_URL="https://github.com/JeffreyCA/Apollo-ImprovedCustomApi/releases/download/${LATEST_TAG}/${DEB_NAME}"
 
           echo "RELEASE_TAG=$LATEST_TAG" >> "$GITHUB_OUTPUT"
           echo "DEB_URL=$DEB_URL" >> "$GITHUB_OUTPUT"
 
-          echo "UPSTREAM_NOTES<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$UPSTREAM_NOTES" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
+      # ------------------------------------------------------------
+      # 🔹 Upstream changelog ophalen (curl + python, ZONDER heredoc)
+      # ------------------------------------------------------------
+      - name: Fetch ImprovedCustomApi changelog
+        id: upstream
+        run: |
+          python -c "
+import requests, os
+tag = os.environ['RELEASE_TAG']
+url = f'https://api.github.com/repos/JeffreyCA/Apollo-ImprovedCustomApi/releases/tags/{tag}'
+r = requests.get(url, timeout=10)
+r.raise_for_status()
+print(r.json().get('body','').strip())
+" > upstream_notes.txt
 
-      - name: Download apollo .ipa and improvedcustomapi .deb
-        id: download-files
+          echo 'UPSTREAM_NOTES<<EOF' >> "$GITHUB_OUTPUT"
+          cat upstream_notes.txt >> "$GITHUB_OUTPUT"
+          echo 'EOF' >> "$GITHUB_OUTPUT"
         env:
-          DEB_URL: ${{ steps.get-release.outputs.DEB_URL }}
           RELEASE_TAG: ${{ steps.get-release.outputs.RELEASE_TAG }}
+
+      # ------------------------------------------------------------
+      # Download IPA + DEB
+      # ------------------------------------------------------------
+      - name: Download Apollo IPA and ImprovedCustomApi DEB
+        id: download
         run: |
           curl -L "$APOLLO_IPA_URL" -o Apollo.ipa
+          curl -L "${{ steps.get-release.outputs.DEB_URL }}" -o improvedcustomapi.deb
 
           APOLLO_VERSION=$(unzip -p Apollo.ipa 'Payload/*.app/Info.plist' \
             | grep -A1 CFBundleShortVersionString \
@@ -102,98 +98,62 @@ EOF
             | sed -E 's/.*<string>([^<]+)<\/string>.*/\1/' \
             | tr -d '[:space:]')
 
-          curl -L "$DEB_URL" -o improvedcustomapi.deb
-
-          ICA_VERSION="${RELEASE_TAG#v}"
+          ICA_VERSION="${{ steps.get-release.outputs.RELEASE_TAG }}"
+          ICA_VERSION="${ICA_VERSION#v}"
 
           echo "APOLLO_VERSION=$APOLLO_VERSION" >> "$GITHUB_OUTPUT"
           echo "ICA_VERSION=$ICA_VERSION" >> "$GITHUB_OUTPUT"
           echo "OUTPUT_NAME=Apollo-${APOLLO_VERSION}_ImprovedCustomApi-${ICA_VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Setup build folders
-        env:
-          OUTPUT_NAME: ${{ steps.download-files.outputs.OUTPUT_NAME }}
+      # ------------------------------------------------------------
+      # Build IPA
+      # ------------------------------------------------------------
+      - name: Build modified IPA
         run: |
-          mkdir -p "${OUTPUT_NAME}/Payload"
-          mkdir -p "NO-EXTENSIONS_${OUTPUT_NAME}/Payload"
+          mkdir -p build/Payload
+          cd build
 
-      - name: Build modified .ipa
-        env:
-          OUTPUT_NAME: ${{ steps.download-files.outputs.OUTPUT_NAME }}
-        working-directory: ${{ steps.download-files.outputs.OUTPUT_NAME }}
-        run: |
-          cyan -i "${GITHUB_WORKSPACE}/Apollo.ipa" \
-               -o "Payload/Apollo.app" \
-               -f "${GITHUB_WORKSPACE}/improvedcustomapi.deb" \
+          cyan -i ../Apollo.ipa \
+               -o Payload/Apollo.app \
+               -f ../improvedcustomapi.deb \
                --fakesign
 
-          zip -6 -rq "${OUTPUT_NAME}.ipa" Payload -x "*/.*"
+          zip -6 -rq "${{ steps.download.outputs.OUTPUT_NAME }}.ipa" Payload -x "*/.*"
 
           vtool -set-build-version ios 15.0 19.0 -replace \
             -output Payload/Apollo.app/Apollo Payload/Apollo.app/Apollo
 
           ldid -S -M Payload/Apollo.app/Apollo
 
-          zip -6 -rq "GLASS_${OUTPUT_NAME}.ipa" Payload -x "*/.*"
+          zip -6 -rq "GLASS_${{ steps.download.outputs.OUTPUT_NAME }}.ipa" Payload -x "*/.*"
 
-      - name: Build no extension modified .ipa
-        env:
-          OUTPUT_NAME: ${{ steps.download-files.outputs.OUTPUT_NAME }}
-        working-directory: NO-EXTENSIONS_${{ steps.download-files.outputs.OUTPUT_NAME }}
-        run: |
-          cyan -i "${GITHUB_WORKSPACE}/Apollo.ipa" \
-               -o "Payload/Apollo.app" \
-               -f "${GITHUB_WORKSPACE}/improvedcustomapi.deb" \
-               --fakesign -e
-
-          zip -6 -rq "NO-EXTENSIONS_${OUTPUT_NAME}.ipa" Payload -x "*/.*"
-
-          vtool -set-build-version ios 15.0 19.0 -replace \
-            -output Payload/Apollo.app/Apollo Payload/Apollo.app/Apollo
-
-          ldid -S -M Payload/Apollo.app/Apollo
-
-          zip -6 -rq "NO-EXTENSIONS_GLASS_${OUTPUT_NAME}.ipa" Payload -x "*/.*"
-
+      # ------------------------------------------------------------
+      # Release notes
+      # ------------------------------------------------------------
       - name: Generate release notes
-        env:
-          APOLLO_VERSION: ${{ steps.download-files.outputs.APOLLO_VERSION }}
-          ICA_VERSION: ${{ steps.download-files.outputs.ICA_VERSION }}
-          UPSTREAM_NOTES: ${{ steps.get-release.outputs.UPSTREAM_NOTES }}
         run: |
           {
             echo "## Apollo build"
-            echo "- Apollo version: \`v${APOLLO_VERSION}\`"
-            echo "- ImprovedCustomApi version: \`v${ICA_VERSION}\`"
+            echo "- Apollo version: \`v${{ steps.download.outputs.APOLLO_VERSION }}\`"
+            echo "- ImprovedCustomApi version: \`v${{ steps.download.outputs.ICA_VERSION }}\`"
             echo ""
-
             echo "## ImprovedCustomApi changelog"
-            if [ -n "$UPSTREAM_NOTES" ]; then
-              echo "$UPSTREAM_NOTES"
-            else
-              echo "_No upstream release notes found._"
-            fi
+            echo "${{ steps.upstream.outputs.UPSTREAM_NOTES }}"
             echo ""
-
             echo "## Known Issues"
-            echo "- Apollo Ultra features may cause app crashes"
+            echo "- Apollo Ultra features may cause crashes"
             echo "- Imgur multi-image upload"
           } > RELEASE_NOTES.md
 
-      - name: Create release
+      # ------------------------------------------------------------
+      # Create GitHub release
+      # ------------------------------------------------------------
+      - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.download-files.outputs.APOLLO_VERSION }}_${{ steps.download-files.outputs.ICA_VERSION }}
-          name: Apollo v${{ steps.download-files.outputs.APOLLO_VERSION }} with ImprovedCustomApi v${{ steps.download-files.outputs.ICA_VERSION }}
+          tag_name: v${{ steps.download.outputs.APOLLO_VERSION }}_${{ steps.download.outputs.ICA_VERSION }}
+          name: Apollo v${{ steps.download.outputs.APOLLO_VERSION }} with ImprovedCustomApi v${{ steps.download.outputs.ICA_VERSION }}
           body_path: RELEASE_NOTES.md
           files: |
-            ${{ steps.download-files.outputs.OUTPUT_NAME }}/${{ steps.download-files.outputs.OUTPUT_NAME }}.ipa
-            ${{ steps.download-files.outputs.OUTPUT_NAME }}/GLASS_${{ steps.download-files.outputs.OUTPUT_NAME }}.ipa
-            NO-EXTENSIONS_${{ steps.download-files.outputs.OUTPUT_NAME }}/NO-EXTENSIONS_${{ steps.download-files.outputs.OUTPUT_NAME }}.ipa
-            NO-EXTENSIONS_${{ steps.download-files.outputs.OUTPUT_NAME }}/NO-EXTENSIONS_GLASS_${{ steps.download-files.outputs.OUTPUT_NAME }}.ipa
-
-      - name: Job summary
-        run: |
-          echo "### ✅ Build completed successfully" >> $GITHUB_STEP_SUMMARY
-          echo "- Apollo v${{ steps.download-files.outputs.APOLLO_VERSION }}" >> $GITHUB_STEP_SUMMARY
-          echo "- ImprovedCustomApi v${{ steps.download-files.outputs.ICA_VERSION }}" >> $GITHUB_STEP_SUMMARY
+            build/${{ steps.download.outputs.OUTPUT_NAME }}.ipa
+            build/GLASS_${{ steps.download.outputs.OUTPUT_NAME }}.ipa
