@@ -8,6 +8,11 @@ on:
         description: 'Apollo .ipa URL'
         required: false
         default: 'https://files.catbox.moe/o2lue0.ipa'
+  workflow_call:
+    inputs:
+      apollo_ipa_url:
+        required: false
+        type: string
 
 env:
   PYTHON_VERSION: '3.13'
