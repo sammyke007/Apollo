@@ -2,7 +2,7 @@ name: check release
 
 on:
   schedule:
-    - cron: "0 0 * * *" # Runs every day
+    - cron: "0 5 * * *" # Runs every day
   workflow_dispatch:
 
 env:
