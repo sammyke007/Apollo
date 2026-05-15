@@ -134,18 +134,26 @@ jobs:
           echo "ICA_VERSION=$ICA_VERSION" >> "$GITHUB_OUTPUT"
           echo "OUTPUT_NAME=Apollo-${APOLLO_VERSION}_ImprovedCustomApi-${ICA_VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Patch Apollo IPA with latest patch.sh
+      - name: Download patch source and patch Apollo IPA
         run: |
           curl -L \
-            "https://raw.githubusercontent.com/JeffreyCA/Apollo-ImprovedCustomApi/${{ steps.get-release.outputs.RELEASE_TAG }}/patch.sh" \
-            -o patch.sh
+            "https://github.com/JeffreyCA/Apollo-ImprovedCustomApi/archive/refs/tags/${{ steps.get-release.outputs.RELEASE_TAG }}.zip" \
+            -o improvedcustomapi-source.zip
+
+          unzip -q improvedcustomapi-source.zip
+
+          VERSION="${{ steps.get-release.outputs.RELEASE_TAG }}"
+          VERSION="${VERSION#v}"
+          SRC_DIR="Apollo-ImprovedCustomApi-${VERSION}"
+
+          cd "$SRC_DIR"
 
           chmod +x patch.sh
 
-          ./patch.sh Apollo.ipa \
+          ./patch.sh ../Apollo.ipa \
             --liquid-glass \
             --remove-code-signature \
-            -o Apollo-LiquidGlass.ipa
+            -o ../Apollo-LiquidGlass.ipa
 
       - name: Build modified IPA
         run: |
