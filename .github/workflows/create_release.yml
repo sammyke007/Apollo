@@ -14,6 +14,9 @@ on:
         required: false
         type: string
 
+permissions:
+  contents: write
+
 env:
   PYTHON_VERSION: '3.13'
   APOLLO_IPA_URL: ${{ inputs.apollo_ipa_url || 'https://files.catbox.moe/o2lue0.ipa' }}
@@ -24,17 +27,11 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      # ------------------------------------------------------------
-      # Checkout
-      # ------------------------------------------------------------
       - name: Check out repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # ------------------------------------------------------------
-      # Python
-      # ------------------------------------------------------------
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
@@ -46,15 +43,9 @@ jobs:
           pip install requests
           pip install --force-reinstall "${{ env.PYZULE_RW_URL }}"
 
-      # ------------------------------------------------------------
-      # ldid
-      # ------------------------------------------------------------
       - name: Install ldid
         run: brew install ldid
 
-      # ------------------------------------------------------------
-      # Determine latest ImprovedCustomApi release
-      # ------------------------------------------------------------
       - name: Determine latest ImprovedCustomApi release
         id: get-release
         run: |
@@ -76,9 +67,6 @@ jobs:
           echo "RELEASE_TAG=$LATEST_TAG" >> "$GITHUB_OUTPUT"
           echo "DEB_URL=$DEB_URL" >> "$GITHUB_OUTPUT"
 
-      # ------------------------------------------------------------
-      # Fetch upstream changelog (FIX links to upstream repo)
-      # ------------------------------------------------------------
       - name: Fetch ImprovedCustomApi changelog
         id: upstream
         run: |
@@ -86,46 +74,40 @@ jobs:
           import os
           import re
           import requests
-      
+
           tag = os.environ["RELEASE_TAG"]
           token = os.environ["GITHUB_TOKEN"]
-      
+
           repo = "JeffreyCA/Apollo-ImprovedCustomApi"
           base_url = f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
-      
+
           headers = {
               "Authorization": f"Bearer {token}",
               "Accept": "application/vnd.github+json",
           }
-      
+
           r = requests.get(base_url, headers=headers, timeout=10)
           r.raise_for_status()
-      
+
           body = r.json().get("body", "").strip()
-      
-          # --------------------------------------------------------
-          # Rewrite GitHub shorthand references to absolute links
-          # --------------------------------------------------------
-      
-          # PR #123 → PR [#123](.../pull/123)
+
           body = re.sub(
               r"\bPR\s+#(\d+)\b",
               rf"PR [#\1](https://github.com/{repo}/pull/\1)",
               body,
           )
-      
-          # issue #123 or (#123) → [#123](.../issues/123)
+
           body = re.sub(
               r"#(\d+)\b",
               rf"[#\1](https://github.com/{repo}/issues/\1)",
               body,
           )
-      
+
           print(body)
           PYEOF
-      
+
           python fetch_changelog.py > upstream_notes.txt
-      
+
           echo "UPSTREAM_NOTES<<EOF" >> "$GITHUB_OUTPUT"
           cat upstream_notes.txt >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
@@ -133,9 +115,6 @@ jobs:
           RELEASE_TAG: ${{ steps.get-release.outputs.RELEASE_TAG }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # ------------------------------------------------------------
-      # Download IPA + DEB
-      # ------------------------------------------------------------
       - name: Download Apollo IPA and ImprovedCustomApi DEB
         id: download
         run: |
@@ -155,22 +134,29 @@ jobs:
           echo "ICA_VERSION=$ICA_VERSION" >> "$GITHUB_OUTPUT"
           echo "OUTPUT_NAME=Apollo-${APOLLO_VERSION}_ImprovedCustomApi-${ICA_VERSION}" >> "$GITHUB_OUTPUT"
 
-      # ------------------------------------------------------------
-      # Build IPA (cyan)
-      # ------------------------------------------------------------
+      - name: Patch Apollo IPA with latest patch.sh
+        run: |
+          curl -L \
+            "https://raw.githubusercontent.com/JeffreyCA/Apollo-ImprovedCustomApi/${{ steps.get-release.outputs.RELEASE_TAG }}/patch.sh" \
+            -o patch.sh
+
+          chmod +x patch.sh
+
+          ./patch.sh Apollo.ipa \
+            --liquid-glass \
+            --remove-code-signature \
+            -o Apollo-LiquidGlass.ipa
+
       - name: Build modified IPA
         run: |
           mkdir -p build/Payload
           cd build
 
-          cyan -i ../Apollo.ipa \
+          cyan -i ../Apollo-LiquidGlass.ipa \
                -o Payload/Apollo.app \
                -f ../improvedcustomapi.deb \
                --fakesign
 
-      # ------------------------------------------------------------
-      # 🔧 FIX: remove duplicate LC_RPATH (DYLD crash fix)
-      # ------------------------------------------------------------
       - name: Fix duplicate LC_RPATH in Apollo binary
         run: |
           BIN="build/Payload/Apollo.app/Apollo"
@@ -200,9 +186,6 @@ jobs:
             inr && $1=="path"{print $2; inr=0}
           '
 
-      # ------------------------------------------------------------
-      # vtool + signing + zip
-      # ------------------------------------------------------------
       - name: Finalize IPA
         run: |
           cd build
@@ -216,9 +199,6 @@ jobs:
 
           zip -6 -rq "GLASS_${{ steps.download.outputs.OUTPUT_NAME }}.ipa" Payload -x "*/.*"
 
-      # ------------------------------------------------------------
-      # Release notes
-      # ------------------------------------------------------------
       - name: Generate release notes
         run: |
           {
@@ -234,9 +214,6 @@ jobs:
             echo "- Imgur multi-image upload"
           } > RELEASE_NOTES.md
 
-      # ------------------------------------------------------------
-      # Create GitHub release
-      # ------------------------------------------------------------
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
