@@ -141,7 +141,7 @@ jobs:
             "https://github.com/JeffreyCA/Apollo-ImprovedCustomApi/archive/refs/tags/${{ steps.get-release.outputs.RELEASE_TAG }}.zip" \
             -o improvedcustomapi-source.zip
 
-          unzip -q improvedcustomapi-source.zip
+          ditto -xk improvedcustomapi-source.zip .
 
           VERSION="${{ steps.get-release.outputs.RELEASE_TAG }}"
           VERSION="${VERSION#v}"
