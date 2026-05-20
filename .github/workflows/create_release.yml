@@ -232,3 +232,20 @@ jobs:
           files: |
             build/${{ steps.download.outputs.OUTPUT_NAME }}.ipa
             build/GLASS_${{ steps.download.outputs.OUTPUT_NAME }}.ipa
+
+      - name: Update .current-release on successful build
+        if: success()
+        run: |
+          RELEASE_TAG="${{ steps.get-release.outputs.RELEASE_TAG }}"
+          echo "$RELEASE_TAG" > .current-release
+
+          git config --global user.name 'GitHub Action'
+          git config --global user.email 'action@github.com'
+          git add .current-release
+
+          if git diff --cached --quiet; then
+            echo "No changes detected, skipping commit."
+          else
+            git commit -m "update version to $RELEASE_TAG"
+            git push
+          fi
