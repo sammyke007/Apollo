@@ -23,7 +23,7 @@ jobs:
       - name: Fetch latest release information
         id: check-release
         run: |
-          RESPONSE="$(curl -s "${{ env.GITHUB_API_URL }}")"
+          RESPONSE="$(curl -sL "${{ env.GITHUB_API_URL }}")"
           if [ -z "$RESPONSE" ]; then
             echo "Error: Empty response from GitHub API"
             exit 1
