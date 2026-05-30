@@ -1,3 +1,9 @@
+# This is OLD, please use [Apollo-Reborn](https://github.com/Apollo-Reborn/Apollo-Reborn) now!
+
+---
+---
+---
+
 <p align="center">
   <img src="https://github.com/Balackburn/Apollo/assets/93828569/532f0b7e-8c06-483c-9d04-8b84ada7b972" alt="Apollo for Reddit Banner" />
 </p>
@@ -6,7 +12,7 @@
 ![Release](https://img.shields.io/github/downloads/Balackburn/Apollo/total)
 ![GitHub issues](https://img.shields.io/github/issues-raw/Balackburn/Apollo)
 
-# Apollo for Reddit with ImprovedCustomAPI
+### Apollo for Reddit with ImprovedCustomAPI
 
 This AltStore source provides pre-built releases of [Apollo App (Christian Selig)](https://apolloapp.io/) injected with [ImprovedCustomApi (JeffreyCA)](https://github.com/JeffreyCA/Apollo-ImprovedCustomApi).
 
@@ -14,7 +20,7 @@ It uses version `1.15.11` of the app and the latest release of the tweak.
 
 Before raising any issues, please check the [ImprovedCustomApi](https://github.com/JeffreyCA/Apollo-ImprovedCustomApi/issues) repo first - as this source only integrates it.
 
-## Standard Source
+### Standard Source
 
 <a href="https://intradeus.github.io/http-protocol-redirector?r=altstore://source?url=https://raw.githubusercontent.com/Balackburn/Apollo/refs/heads/main/apps.json"><img src="images/buttons/altstore_button.png" width="200"></a>
 &nbsp;
